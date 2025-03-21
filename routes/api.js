@@ -163,21 +163,15 @@ router.post('/result', async (req, res) => {
   const { userEmail, quizID, timeTaken, userAnswers } = req.body;
 
   try {
-    // Find the quiz
+    // Find the quiz with all relevant fields
     const quiz = await QuizData.findOne({ quizID });
     if (!quiz) {
       return res.status(404).json({ error: "Quiz not found" });
     }
 
-    // Find the correct answers
-    const quizAnswers = await QuizAnswers.findOne({ quizID });
-    if (!quizAnswers) {
-      return res.status(404).json({ error: "Quiz answers not found" });
-    }
-
-    // Calculate the score
+    // Calculate the score using questions array
     let totalCorrectAnswers = 0;
-    const correctAnswers = quizAnswers.answers.reduce((acc, q) => {
+    const correctAnswers = quiz.questions.reduce((acc, q) => {
       acc[q.questionID] = q.correctAnswer;
       return acc;
     }, {});
@@ -190,37 +184,43 @@ router.post('/result', async (req, res) => {
 
     const quizScore = Math.round((totalCorrectAnswers / quiz.number_of_questions) * 100);
 
-    // Save the result
+    // Save the result with QuizData fields
     const result = new Result({
-      resultID: generateID("RS"),
+      resultID: generateID("RS"), // Assuming generateID is defined elsewhere
       email: userEmail,
       quizID,
       quiz_score: quizScore,
       time_taken: timeTaken,
-      total_correct_answers: totalCorrectAnswers
+      total_correct_answers: totalCorrectAnswers,
+      subject: quiz.subject_name,
+      difficulty: quiz.difficulty_level,
+      quizDatetime: quiz.datetime
     });
     await result.save();
 
     // Update user points
     const user = await QuserInfo.findOne({ email: userEmail });
     if (user) {
-      user.points += totalCorrectAnswers; // 1 point per correct answer
+      user.points += totalCorrectAnswers;
       await user.save();
     }
 
+    // Return response with QuizData fields
     res.json({
       resultId: result.resultID,
       noofquestions: quiz.number_of_questions,
       quizID,
       timeTaken,
       quizScore,
-      totalCorrectAnswers
+      totalCorrectAnswers,
+      subject: quiz.subject_name,
+      difficulty: quiz.difficulty_level,
+      quizDatetime: quiz.datetime
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
 // POST /api/report-card
 router.post('/report-card', async (req, res) => {
   const { email } = req.body;
