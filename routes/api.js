@@ -165,15 +165,22 @@ router.post('/result', async (req, res) => {
       return res.status(404).json({ error: "Quiz not found" });
     }
 
-    // Calculate the score using questions array
-    let totalCorrectAnswers = 0;
-    const correctAnswers = quiz.questions.reduce((acc, q) => {
-      acc[q.questionID] = q.correctAnswer;
+    // Get correct answers from QuizAnswers collection
+    const quizAnswers = await QuizAnswers.findOne({ quizID });
+    if (!quizAnswers) {
+      return res.status(404).json({ error: "Quiz answers not found" });
+    }
+
+    // Create correct answers object in key-value format (q1: answer, q2: answer)
+    const correctAnswers = quizAnswers.answers.reduce((acc, q) => {
+      acc[`q${q.questionID}`] = q.correctAnswer;
       return acc;
     }, {});
 
+    // Calculate the score
+    let totalCorrectAnswers = 0;
     for (const [questionID, userAnswer] of Object.entries(userAnswers)) {
-      if (userAnswer === correctAnswers[questionID]) {
+      if (userAnswer === correctAnswers[`q${questionID}`]) {
         totalCorrectAnswers++;
       }
     }
@@ -182,7 +189,7 @@ router.post('/result', async (req, res) => {
 
     // Save the result with QuizData fields
     const result = new Result({
-      resultID: generateID("RS"), // Assuming generateID is defined elsewhere
+      resultID: generateID("RS"),
       email: userEmail,
       quizID,
       quiz_score: quizScore,
@@ -201,7 +208,7 @@ router.post('/result', async (req, res) => {
       await user.save();
     }
 
-    // Return response with QuizData fields
+    // Return response with correct answers in key-value format
     res.json({
       resultId: result.resultID,
       noofquestions: quiz.number_of_questions,
@@ -211,7 +218,8 @@ router.post('/result', async (req, res) => {
       totalCorrectAnswers,
       subject: quiz.subject_name,
       difficulty: quiz.difficulty_level,
-      quizDatetime: quiz.datetime
+      quizDatetime: quiz.datetime,
+      correctAnswers: correctAnswers // Added correct answers in key-value format
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
