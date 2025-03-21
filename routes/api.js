@@ -15,13 +15,17 @@ const generateID = (prefix) => {
 };
 
 // POST /api/login
+// POST /api/login
 router.post('/login', async (req, res) => {
   const { email, profileUrl, name } = req.body;
 
   try {
     let user = await QuserInfo.findOne({ email });
     if (user) {
-      return res.json({ message: "Login successfully" });
+      return res.json({
+        message: "Login successfully",
+        userPoints: user.points // Include the user's points in the response
+      });
     }
 
     user = new QuserInfo({
@@ -32,7 +36,10 @@ router.post('/login', async (req, res) => {
     });
     await user.save();
 
-    res.json({ message: "Login successfully, new user created" });
+    res.json({
+      message: "Login successfully, new user created",
+      userPoints: user.points // Include the new user's points (0) in the response
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -40,16 +47,18 @@ router.post('/login', async (req, res) => {
 
 // POST /api/generate-test
 router.post('/generate-test', async (req, res) => {
-  const { subjectName, difficulty, numberofquestions } = req.body;
+  const { subjectName, difficulty, numberOfQuestions } = req.body; // Fix: Use numberOfQuestions (camelCase)
+
+  console.log('Request Body:', req.body); // Log the incoming request body
 
   try {
     // Prepare the request body for the Gemini API
     const requestBody = {
       contents: [{
         parts: [{
-          text: `Generate ${numberofquestions} multiple-choice questions on ${subjectName} with a ${difficulty} difficulty level. Provide the response in a JSON object with the following structure:  
+          text: `Generate ${numberOfQuestions} multiple-choice questions on ${subjectName} with a ${difficulty} difficulty level. Provide the response in a JSON object with the following structure:  
 {
-  "questions": [
+  "questions": [ 
     {
       "index": 1,
       "question": "Question text here",
@@ -62,6 +71,7 @@ router.post('/generate-test', async (req, res) => {
       }]
     };
 
+    console.log('Calling Gemini API...');
     // Call the Gemini API
     const response = await fetch(API_URL, {
       method: "POST",
@@ -72,23 +82,30 @@ router.post('/generate-test', async (req, res) => {
     });
 
     if (!response.ok) {
+      console.log('Gemini API Response Status:', response.status);
       throw new Error(`HTTP Error! Status: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('Gemini API Raw Response:', data);
+
     const mainResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+    console.log('Gemini API Main Response:', mainResponse);
 
     // Parse the Gemini API response (it returns a JSON string)
     let generatedQuestions;
     try {
       // Clean up the response (remove any markdown or extra text like ```json)
       const cleanedResponse = mainResponse.replace(/```json|```/g, '').trim();
+      console.log('Cleaned Response:', cleanedResponse);
       generatedQuestions = JSON.parse(cleanedResponse);
     } catch (err) {
+      console.error('Parsing Error:', err.message);
       throw new Error("Failed to parse Gemini API response: " + err.message);
     }
 
     if (!generatedQuestions.questions || !Array.isArray(generatedQuestions.questions)) {
+      console.error('Invalid Gemini API Response Format:', generatedQuestions);
       throw new Error("Invalid response format from Gemini API");
     }
 
@@ -101,17 +118,20 @@ router.post('/generate-test', async (req, res) => {
 
     // Generate a quizID
     const quizID = generateID("QZ");
+    console.log('Generated Quiz ID:', quizID);
 
     // Save the quiz to QuizData
     const quiz = new QuizData({
       quizID,
       datetime: new Date(),
       difficulty_level: difficulty,
-      number_of_questions: numberofquestions,
+      number_of_questions: numberOfQuestions, // Fix: Use numberOfQuestions (camelCase)
       subject_name: subjectName,
       questions: quizQuestions
     });
+    console.log('Saving Quiz to QuizData...');
     await quiz.save();
+    console.log('Quiz Saved to QuizData:', quiz);
 
     // Save the correct answers to QuizAnswers
     const quizAnswers = new QuizAnswers({
@@ -121,7 +141,9 @@ router.post('/generate-test', async (req, res) => {
         correctAnswer: q.correctAnswer
       }))
     });
+    console.log('Saving Correct Answers to QuizAnswers...');
     await quizAnswers.save();
+    console.log('Correct Answers Saved to QuizAnswers:', quizAnswers);
 
     // Format the response for the frontend (key-value pair for questions and options)
     const responseQuestions = quizQuestions.map(q => ({
@@ -131,15 +153,16 @@ router.post('/generate-test', async (req, res) => {
       }
     }));
 
+    console.log('Sending Response to Frontend:', { quizID, questions: responseQuestions });
     res.json({
       quizID,
       questions: responseQuestions
     });
   } catch (err) {
+    console.error('Error in /api/generate-test:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 // POST /api/result
 router.post('/result', async (req, res) => {
   const { userEmail, quizID, timeTaken, userAnswers } = req.body;
