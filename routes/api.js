@@ -52,11 +52,15 @@ router.post('/generate-test', async (req, res) => {
   console.log('Request Body:', req.body);
 
   try {
-    // Prepare the request body for the Gemini API
+    // Generate a unique seed-like value (e.g., timestamp + random string)
+    const seed = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    console.log('Generated Seed:', seed);
+
+    // Prepare the request body for the Gemini API with a seed in the prompt
     const requestBody = {
       contents: [{
         parts: [{
-          text: `Generate ${numberOfQuestions} multiple-choice questions on ${subjectName} with a ${difficulty} difficulty level. Provide the response in a JSON object with the following structure:  
+          text: `Using the unique seed "${seed}", generate ${numberOfQuestions} unique multiple-choice questions on ${subjectName} with a ${difficulty} difficulty level. Ensure the questions are fresh, distinct, and tailored based on the provided seed to avoid repetition of previously generated questions or common examples. Provide the response in a JSON object with the following structure:  
 {
   "questions": [ 
     {
