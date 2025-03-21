@@ -47,9 +47,9 @@ router.post('/login', async (req, res) => {
 
 // POST /api/generate-test
 router.post('/generate-test', async (req, res) => {
-  const { subjectName, difficulty, numberOfQuestions } = req.body; // Fix: Use numberOfQuestions (camelCase)
+  const { subjectName, difficulty, numberOfQuestions } = req.body;
 
-  console.log('Request Body:', req.body); // Log the incoming request body
+  console.log('Request Body:', req.body);
 
   try {
     // Prepare the request body for the Gemini API
@@ -72,7 +72,6 @@ router.post('/generate-test', async (req, res) => {
     };
 
     console.log('Calling Gemini API...');
-    // Call the Gemini API
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
@@ -92,10 +91,9 @@ router.post('/generate-test', async (req, res) => {
     const mainResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
     console.log('Gemini API Main Response:', mainResponse);
 
-    // Parse the Gemini API response (it returns a JSON string)
+    // Parse the Gemini API response
     let generatedQuestions;
     try {
-      // Clean up the response (remove any markdown or extra text like ```json)
       const cleanedResponse = mainResponse.replace(/```json|```/g, '').trim();
       console.log('Cleaned Response:', cleanedResponse);
       generatedQuestions = JSON.parse(cleanedResponse);
@@ -109,11 +107,11 @@ router.post('/generate-test', async (req, res) => {
       throw new Error("Invalid response format from Gemini API");
     }
 
-    // Map the questions to the required format for QuizData
+    // Map the questions to the desired format
     const quizQuestions = generatedQuestions.questions.map(q => ({
-      questionID: q.index,
-      Questions: q.question,
-      Options: q.options
+      questionID: q.index,          // Use "questionID" as per your example
+      Questions: q.question,        // Use "Questions" as per your example
+      Options: q.options           // Use "Options" as per your example
     }));
 
     // Generate a quizID
@@ -125,7 +123,7 @@ router.post('/generate-test', async (req, res) => {
       quizID,
       datetime: new Date(),
       difficulty_level: difficulty,
-      number_of_questions: numberOfQuestions, // Fix: Use numberOfQuestions (camelCase)
+      number_of_questions: numberOfQuestions,
       subject_name: subjectName,
       questions: quizQuestions
     });
@@ -145,18 +143,11 @@ router.post('/generate-test', async (req, res) => {
     await quizAnswers.save();
     console.log('Correct Answers Saved to QuizAnswers:', quizAnswers);
 
-    // Format the response for the frontend (key-value pair for questions and options)
-    const responseQuestions = quizQuestions.map(q => ({
-      [q.questionID]: {
-        question: q.Questions,
-        options: q.Options
-      }
-    }));
-
-    console.log('Sending Response to Frontend:', { quizID, questions: responseQuestions });
+    // Send the response in the desired format
+    console.log('Sending Response to Frontend:', { quizID, questions: quizQuestions });
     res.json({
       quizID,
-      questions: responseQuestions
+      questions: quizQuestions
     });
   } catch (err) {
     console.error('Error in /api/generate-test:', err.message);
