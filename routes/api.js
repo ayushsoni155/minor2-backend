@@ -29,7 +29,7 @@ router.post('/generate-interview', async (req, res) => {
         const requestBody = {
             contents: [{
                 parts: [{
-                    text: `Generate the first interview question for a B.Tech student (HR & Technical). Response format:
+                    text: `Generate a unique and different first interview question every time for a B.Tech student (HR & Technical).Response format:
 {
   "question": "Your question here"
 }`
@@ -70,7 +70,7 @@ router.post('/process-answer', async (req, res) => {
         const requestBody = {
             contents: [{
                 parts: [{
-                    text: `Analyze the following conversation and generate the next relevant interview question:
+                    text: `You are taking a mock interview (HR and technical) of a B.Tech student. Analyze the following conversation and generate the next relevant interview question:
 ${formattedQA}
 Response format:
 {
@@ -130,7 +130,7 @@ router.post('/evaluate-answers', async (req, res) => {
         const requestBody = {
             contents: [{
                 parts: [{
-                    text: `Evaluate the following interview responses and provide feedback:
+                    text: `You are an expert interview evaluator. Analyze the following mock interview conversation and provide a detailed assessment of the candidate's performance. Evaluate their answers based on clarity, technical accuracy, confidence, and relevance. Provide feedback in the following JSON format:
 ${formattedQA}
 Response format:
 {
