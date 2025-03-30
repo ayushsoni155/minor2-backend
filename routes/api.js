@@ -13,14 +13,6 @@ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-
 const generateID = (prefix) => {
   return `${prefix}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 };
-const express = require('express');
-const router = express.Router();
-const fetch = require('node-fetch'); // Ensure you have this installed
-
-// Gemini API configuration
-const API_KEY = "YOUR_GEMINI_API_KEY"; // Replace with your actual API key
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
-
 // Helper function to format conversation history
 const formatConversation = (conversation) => {
     return conversation.map((entry, index) => `Q${index + 1}: ${entry.question}\nA${index + 1}: ${entry.answer}`).join('\n');
