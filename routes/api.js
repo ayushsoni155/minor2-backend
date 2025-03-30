@@ -13,8 +13,80 @@ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-
 const generateID = (prefix) => {
   return `${prefix}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 };
+// POST /api/evaluate-answers
+router.post('/evaluate-answers', async (req, res) => {
+  const { questions, answers } = req.body;
 
-// POST /api/login
+  try {
+    const formattedQA = questions.map((q, i) => `Q${q.index}: ${q.question}\nA${q.index}: ${answers[i]}`).join('\n');
+
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: `Evaluate the following interview responses and provide constructive feedback:
+${formattedQA}
+Provide feedback in this JSON format:
+{
+  "feedback": [
+    { "index": 1, "comment": "Feedback for answer 1" },
+    { "index": 2, "comment": "Feedback for answer 2" }
+  ]
+}`
+        }]
+      }]
+    };
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    });
+
+    const data = await response.json();
+    const mainResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+
+    const cleanedResponse = mainResponse.replace(/```json|```/g, '').trim();
+    const feedback = JSON.parse(cleanedResponse);
+
+    res.json(feedback);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router.post('/generate-interview', async (req, res) => {
+  try {
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: `Generate 5 minute interview questions on btech student HR and technical interview. Provide a JSON response in the following format:
+{
+  "questions": [
+    { "index": 1, "question": "Question text here" },
+    { "index": 2, "question": "Question text here" }
+  ]
+}`
+        }]
+      }]
+    };
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    });
+
+    const data = await response.json();
+    const mainResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+
+    const cleanedResponse = mainResponse.replace(/```json|```/g, '').trim();
+    const generatedQuestions = JSON.parse(cleanedResponse);
+
+    res.json({ interviewID: generateID("INT"), questions: generatedQuestions.questions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/login
 router.post('/login', async (req, res) => {
   const { email, profileUrl, name } = req.body;
