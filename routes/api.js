@@ -30,7 +30,7 @@ router.post('/generate-interview', async (req, res) => {
     const requestBody = {
       contents: [{
         parts: [{
-          text: `Generate a unique and different first interview question every time for a B.Tech student (HR & Technical). Response format:
+          text: `Generate a unique and different first and only one interview question every time for a B.Tech student (HR & Technical). Response format:
 {
   "question": "Your question here"
 }`
