@@ -13,78 +13,113 @@ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-
 const generateID = (prefix) => {
   return `${prefix}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 };
-// POST /api/evaluate-answers
-router.post('/evaluate-answers', async (req, res) => {
-  const { questions, answers } = req.body;
+// Helper function to format user responses for evaluation
+const formatConversation = (conversation) => {
+    return conversation.map((entry, index) => `Q${index + 1}: ${entry.question}\nA${index + 1}: ${entry.answer}`).join('\n');
+};
 
-  try {
-    const formattedQA = questions.map((q, i) => `Q${q.index}: ${q.question}\nA${q.index}: ${answers[i]}`).join('\n');
-
-    const requestBody = {
-      contents: [{
-        parts: [{
-          text: `Evaluate the following interview responses and provide constructive feedback:
-${formattedQA}
-Provide feedback in this JSON format:
-{
-  "feedback": [
-    { "index": 1, "comment": "Feedback for answer 1" },
-    { "index": 2, "comment": "Feedback for answer 2" }
-  ]
-}`
-        }]
-      }]
-    };
-
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody)
-    });
-
-    const data = await response.json();
-    const mainResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
-
-    const cleanedResponse = mainResponse.replace(/```json|```/g, '').trim();
-    const feedback = JSON.parse(cleanedResponse);
-
-    res.json(feedback);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Start a new interview session
 router.post('/generate-interview', async (req, res) => {
-  try {
-    const requestBody = {
-      contents: [{
-        parts: [{
-          text: `Generate 5 minute interview questions on btech student HR and technical interview. Provide a JSON response in the following format:
+    try {
+        const requestBody = {
+            contents: [{
+                parts: [{
+                    text: `Generate the first interview question for a B.Tech student (HR & Technical). Response format:
 {
-  "questions": [
-    { "index": 1, "question": "Question text here" },
-    { "index": 2, "question": "Question text here" }
-  ]
+  "question": "Your question here"
 }`
-        }]
-      }]
-    };
+                }]
+            }]
+        };
 
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody)
-    });
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody)
+        });
 
-    const data = await response.json();
-    const mainResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+        const data = await response.json();
+        const cleanedResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+        const { question } = JSON.parse(cleanedResponse);
 
-    const cleanedResponse = mainResponse.replace(/```json|```/g, '').trim();
-    const generatedQuestions = JSON.parse(cleanedResponse);
+        res.json({ question });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
-    res.json({ interviewID: generateID("INT"), questions: generatedQuestions.questions });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// Process user answers and generate the next question
+router.post('/process-answer', async (req, res) => {
+    const { conversation } = req.body;
+
+    try {
+        const formattedQA = formatConversation(conversation);
+
+        const requestBody = {
+            contents: [{
+                parts: [{
+                    text: `Analyze the following conversation and generate the next relevant interview question:
+${formattedQA}
+Response format:
+{
+  "question": "Your next question here"
+}`
+                }]
+            }]
+        };
+
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+        const cleanedResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+        const { question } = JSON.parse(cleanedResponse);
+
+        res.json({ question });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Evaluate final responses
+router.post('/evaluate-answers', async (req, res) => {
+    const { conversation } = req.body;
+
+    try {
+        const formattedQA = formatConversation(conversation);
+
+        const requestBody = {
+            contents: [{
+                parts: [{
+                    text: `Evaluate the following interview responses and provide feedback:
+${formattedQA}
+Response format:
+{
+  "score": "x/10",
+  "strengths": "...",
+  "areasToImprove": "..."
+}`
+                }]
+            }]
+        };
+
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+        const cleanedResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
+        const feedback = JSON.parse(cleanedResponse);
+
+        res.json(feedback);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // POST /api/login
