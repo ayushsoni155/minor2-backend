@@ -65,6 +65,7 @@ router.post('/process-answer', async (req, res) => {
 
     try {
         const formattedQA = formatConversation(conversation);
+        console.log("Formatted QA Sent to API:", formattedQA);
 
         const requestBody = {
             contents: [{
@@ -86,11 +87,29 @@ Response format:
         });
 
         const data = await response.json();
-        let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+        if (!response.ok || !data?.candidates?.length) {
+            console.error("Gemini API Error:", data);
+            return res.status(500).json({ error: "Gemini API request failed" });
+        }
+
+        let rawResponse = data.candidates[0]?.content?.parts?.[0]?.text || "{}";
         rawResponse = cleanResponse(rawResponse);
 
-        const parsedResponse = JSON.parse(rawResponse);
+        let parsedResponse;
+        try {
+            parsedResponse = JSON.parse(rawResponse);
+        } catch (parseError) {
+            console.error("Error parsing Gemini API response:", parseError);
+            return res.status(500).json({ error: "Invalid response from AI API" });
+        }
+
+        if (!parsedResponse.question) {
+            return res.status(500).json({ error: "No valid question generated" });
+        }
+
         res.json({ question: parsedResponse.question });
+
     } catch (err) {
         console.error("Error in /process-answer:", err);
         res.status(500).json({ error: "Internal Server Error" });
@@ -140,8 +159,6 @@ Response format:
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
-
-module.exports = router;
 
 // POST /api/login
 router.post('/login', async (req, res) => {
