@@ -13,12 +13,25 @@ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-
 const generateID = (prefix) => {
   return `${prefix}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 };
-// Helper function to format user responses for evaluation
+const express = require('express');
+const router = express.Router();
+const fetch = require('node-fetch'); // Ensure you have this installed
+
+// Gemini API configuration
+const API_KEY = "YOUR_GEMINI_API_KEY"; // Replace with your actual API key
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+// Helper function to format conversation history
 const formatConversation = (conversation) => {
     return conversation.map((entry, index) => `Q${index + 1}: ${entry.question}\nA${index + 1}: ${entry.answer}`).join('\n');
 };
 
-// Start a new interview session
+// Helper function to clean Gemini API response
+const cleanResponse = (text) => {
+    return text.replace(/```json|```/g, "").trim(); // Removes ```json and ``` from response
+};
+
+// 🔹 **1️⃣ Generate First Interview Question**
 router.post('/generate-interview', async (req, res) => {
     try {
         const requestBody = {
@@ -39,18 +52,24 @@ router.post('/generate-interview', async (req, res) => {
         });
 
         const data = await response.json();
-        const cleanedResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
-        const { question } = JSON.parse(cleanedResponse);
+        let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        rawResponse = cleanResponse(rawResponse); // Remove unwanted formatting
 
-        res.json({ question });
+        const parsedResponse = JSON.parse(rawResponse);
+        res.json({ question: parsedResponse.question });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Error in /generate-interview:", err);
+        res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
-// Process user answers and generate the next question
+// 🔹 **2️⃣ Process User Answer and Generate Next Question**
 router.post('/process-answer', async (req, res) => {
     const { conversation } = req.body;
+
+    if (!conversation || !Array.isArray(conversation)) {
+        return res.status(400).json({ error: "Invalid input format" });
+    }
 
     try {
         const formattedQA = formatConversation(conversation);
@@ -75,18 +94,24 @@ Response format:
         });
 
         const data = await response.json();
-        const cleanedResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
-        const { question } = JSON.parse(cleanedResponse);
+        let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        rawResponse = cleanResponse(rawResponse);
 
-        res.json({ question });
+        const parsedResponse = JSON.parse(rawResponse);
+        res.json({ question: parsedResponse.question });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Error in /process-answer:", err);
+        res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
-// Evaluate final responses
+// 🔹 **3️⃣ Evaluate Final Responses**
 router.post('/evaluate-answers', async (req, res) => {
     const { conversation } = req.body;
+
+    if (!conversation || !Array.isArray(conversation)) {
+        return res.status(400).json({ error: "Invalid input format" });
+    }
 
     try {
         const formattedQA = formatConversation(conversation);
@@ -113,14 +138,18 @@ Response format:
         });
 
         const data = await response.json();
-        const cleanedResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response received";
-        const feedback = JSON.parse(cleanedResponse);
+        let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        rawResponse = cleanResponse(rawResponse);
 
-        res.json(feedback);
+        const parsedResponse = JSON.parse(rawResponse);
+        res.json(parsedResponse);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Error in /evaluate-answers:", err);
+        res.status(500).json({ error: "Internal Server Error" });
     }
 });
+
+module.exports = router;
 
 // POST /api/login
 router.post('/login', async (req, res) => {
