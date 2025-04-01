@@ -4,6 +4,7 @@ const QuserInfo = require('../models/QuserInfo');
 const QuizData = require('../models/QuizData');
 const Result = require('../models/Result');
 const QuizAnswers = require('../models/QuizAnswers');
+
 // Gemini API configuration
 const API_KEY = "AIzaSyBXsYmowCTRUEg9oGyXixLB91WIjO6T9r0"; // Replace with your actual API key
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
@@ -15,201 +16,232 @@ const generateID = (prefix) => {
 
 // Helper function to format conversation history
 const formatConversation = (conversation) => {
-  return conversation.map((entry, index) => `Q${index + 1}: ${entry.question}\nA${index + 1}: ${entry.answer}`).join('\n');
+  return conversation
+    .map((entry, index) => {
+      const responseTimeInfo = entry.responseTime ? ` (Response Time: ${entry.responseTime}s)` : '';
+      return `Q${index + 1}: ${entry.question}\nA${index + 1}: ${entry.answer}${responseTimeInfo}`;
+    })
+    .join('\n');
 };
 
 // Helper function to clean Gemini API response
 const cleanResponse = (text) => {
-  return text.replace(/```json|```/g, "").trim();
+  return text.replace(/```json|```/g, '').replace(/\n/g, ' ').trim();
+};
+
+// Input validation middleware
+const validateInterviewInput = (req, res, next) => {
+  const { type, experience, conversation } = req.body;
+  const validTypes = ['Technical', 'HR', 'Behavioral'];
+  const validExperienceLevels = ['Fresher', 'Experienced', 'Senior'];
+
+  if (req.path.includes('generate-interview') || req.path.includes('process-answer')) {
+    if (!type || !validTypes.includes(type)) {
+      return res.status(400).json({ error: 'Invalid or missing interview type. Must be Technical, HR, or Behavioral.' });
+    }
+    if (!experience || !validExperienceLevels.includes(experience)) {
+      return res.status(400).json({ error: 'Invalid or missing experience level. Must be Fresher, Experienced, or Senior.' });
+    }
+  }
+
+  if (req.path.includes('process-answer') || req.path.includes('evaluate-answers')) {
+    if (!conversation || !Array.isArray(conversation) || conversation.length === 0) {
+      return res.status(400).json({ error: 'Invalid or missing conversation array.' });
+    }
+    for (const entry of conversation) {
+      if (!entry.question && !entry.answer) {
+        return res.status(400).json({ error: 'Conversation entries must include question or answer.' });
+      }
+      if (entry.responseTime && (typeof entry.responseTime !== 'number' || entry.responseTime < 0)) {
+        return res.status(400).json({ error: 'Invalid responseTime in conversation entry.' });
+      }
+    }
+  }
+
+  next();
 };
 
 // 🔹 **1️⃣ Generate First Interview Question**
-// Inside your router file (e.g., routes/index.js)
-router.post('/generate-interview', async (req, res) => {
+router.post('/generate-interview', validateInterviewInput, async (req, res) => {
+  const { type, experience } = req.body;
+
   try {
-    const requestBody = {
-      contents: [{
-        parts: [{
-          text: `Generate a unique and different first and only one interview question every time for a B.Tech student (HR & Technical). Response format:
+    const prompt = `Generate a unique first interview question for a B.Tech student for a ${type} interview at ${experience} level. Ensure the question is relevant, challenging, and tailored to the specified type and experience. Response format:
 {
   "question": "Your question here"
-}`
-        }]
-      }]
+}`;
+
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
     };
 
     const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Gemini API Error: ${response.status} - ${errorText}`);
-      return res.status(500).json({ error: `Gemini API failed: ${response.status} - ${errorText}` });
+      return res.status(500).json({ error: `Failed to generate question: ${errorText}` });
     }
 
     const data = await response.json();
-    console.log("Full Gemini API Response:", JSON.stringify(data, null, 2)); // Log the entire response
-
-    let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     rawResponse = cleanResponse(rawResponse);
-    console.log("Raw Response After Cleaning:", rawResponse); // Log the cleaned text
 
     let parsedResponse;
     try {
       parsedResponse = JSON.parse(rawResponse);
-      console.log("Parsed Response:", parsedResponse); // Log the parsed JSON
     } catch (parseError) {
-      console.error("Failed to parse Gemini API response:", parseError.message);
-      console.error("Raw Response Content:", rawResponse); // Log the problematic text
-      // Fallback: Check if the response is plain text and treat it as a question
-      if (rawResponse && typeof rawResponse === 'string' && rawResponse.trim()) {
+      console.error('Failed to parse Gemini API response:', parseError.message, 'Raw:', rawResponse);
+      // Fallback: Treat as plain text question if possible
+      if (rawResponse.trim()) {
         parsedResponse = { question: rawResponse.trim() };
-        console.log("Fallback: Treating raw response as plain text question:", parsedResponse);
       } else {
-        return res.status(500).json({ error: "Invalid JSON response from Gemini API" });
+        return res.status(500).json({ error: 'Invalid response from Gemini API' });
       }
     }
 
     if (!parsedResponse.question) {
-      consoles.error("No valid question in parsed response:", parsedResponse);
-      return res.status(500).json({ error: "No valid question generated by Gemini API" });
+      console.error('No valid question in parsed response:', parsedResponse);
+      return res.status(500).json({ error: 'Failed to generate a valid question' });
     }
 
     res.json({ question: parsedResponse.question });
   } catch (err) {
-    console.error("Error in /generate-interview:", err.message);
+    console.error('Error in /generate-interview:', err.message);
     res.status(500).json({ error: `Internal Server Error: ${err.message}` });
   }
 });
-// 🔹 **2️⃣ Process User Answer and Generate Next Question** (unchanged, assumed working)
-router.post('/process-answer', async (req, res) => {
-  const { conversation } = req.body;
 
-  if (!conversation || !Array.isArray(conversation)) {
-    return res.status(400).json({ error: "Invalid input format" });
-  }
+// 🔹 **2️⃣ Process User Answer and Generate Next Question**
+router.post('/process-answer', validateInterviewInput, async (req, res) => {
+  const { conversation, type, experience } = req.body;
 
   try {
     const formattedQA = formatConversation(conversation);
-    console.log("Formatted QA Sent to API:", formattedQA);
-
-    const requestBody = {
-      contents: [{
-        parts: [{
-          text: `You are taking a mock interview (HR and technical) of a B.Tech student. Analyze the following conversation and generate the next relevant interview question:
-${formattedQA}
-Response format:
+    const prompt = `You are conducting a ${type} mock interview for a B.Tech student at ${experience} level. Analyze the following conversation and generate the next relevant and tailored interview question. Ensure the question builds on the previous context and matches the specified type and experience level. Response format:
 {
   "question": "Your next question here"
-}`
-        }]
-      }]
+}
+Conversation:
+${formattedQA}`;
+
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
     };
 
     const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Gemini API Error: ${response.status} - ${errorText}`);
-      return res.status(500).json({ error: `Gemini API failed: ${response.status}` });
+      return res.status(500).json({ error: `Failed to generate next question: ${errorText}` });
     }
 
     const data = await response.json();
-    let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     rawResponse = cleanResponse(rawResponse);
 
     let parsedResponse;
     try {
       parsedResponse = JSON.parse(rawResponse);
     } catch (parseError) {
-      console.error("Error parsing Gemini API response:", parseError);
-      return res.status(500).json({ error: "Invalid response from AI API" });
+      console.error('Failed to parse Gemini API response:', parseError.message, 'Raw:', rawResponse);
+      return res.status(500).json({ error: 'Invalid response from Gemini API' });
     }
 
     if (!parsedResponse.question) {
-      return res.status(500).json({ error: "No valid question generated" });
+      console.error('No valid question in parsed response:', parsedResponse);
+      return res.status(500).json({ error: 'Failed to generate a valid next question' });
     }
 
     res.json({ question: parsedResponse.question });
   } catch (err) {
-    console.error("Error in /process-answer:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error('Error in /process-answer:', err.message);
+    res.status(500).json({ error: `Internal Server Error: ${err.message}` });
   }
 });
 
 // 🔹 **3️⃣ Evaluate Final Responses**
-router.post('/evaluate-answers', async (req, res) => {
-  const { conversation } = req.body;
-
-  if (!conversation || !Array.isArray(conversation)) {
-    return res.status(400).json({ error: "Invalid input format" });
-  }
+router.post('/evaluate-answers', validateInterviewInput, async (req, res) => {
+  const { conversation, type, experience } = req.body;
 
   try {
     const formattedQA = formatConversation(conversation);
-    console.log("Formatted QA for Evaluation:", formattedQA);
+    const prompt = `You are an expert interview evaluator for a ${type} mock interview of a B.Tech student at ${experience} level. Analyze the following conversation and provide a detailed assessment of the candidate's performance. Evaluate their answers based on clarity, technical accuracy (for Technical interviews), confidence, relevance, and response time. Provide feedback in the following JSON format:
+{
+  "score": "x/100",
+  "strengths": "Detailed strengths observed in the answers",
+  "areasToImprove": "Specific areas where the candidate can improve",
+  "avgResponseTime": "Average response time in seconds"
+}
+Conversation:
+${formattedQA}`;
 
     const requestBody = {
-      contents: [{
-        parts: [{
-          text: `You are an expert interview evaluator. Analyze the following mock interview conversation and provide a detailed assessment of the candidate's performance. Evaluate their answers based on clarity, technical accuracy, confidence, and relevance. Provide feedback in the following JSON format:
-${formattedQA}
-Response format:
-{
-  "score": "x/10",
-  "strengths": "...",
-  "areasToImprove": "..."
-}`
-        }]
-      }]
+      contents: [{ parts: [{ text: prompt }] }],
     };
 
     const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Gemini API Error: ${response.status} - ${errorText}`);
-      return res.status(500).json({ error: `Gemini API failed: ${response.status} - ${errorText}` });
+      return res.status(500).json({ error: `Failed to evaluate answers: ${errorText}` });
     }
 
     const data = await response.json();
-    console.log("Gemini API Response (evaluate-answers):", data);
-
-    let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    let rawResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     rawResponse = cleanResponse(rawResponse);
-    console.log("Raw Response (evaluate-answers):", rawResponse);
 
     let parsedResponse;
     try {
       parsedResponse = JSON.parse(rawResponse);
     } catch (parseError) {
-      console.error("Failed to parse Gemini API response:", parseError.message, "Raw:", rawResponse);
-      return res.status(500).json({ error: "Invalid JSON response from Gemini API" });
+      console.error('Failed to parse Gemini API response:', parseError.message, 'Raw:', rawResponse);
+      return res.status(500).json({ error: 'Invalid response from Gemini API' });
     }
 
-    if (!parsedResponse.score || !parsedResponse.strengths || !parsedResponse.areasToImprove) {
-      console.error("Invalid feedback format in parsed response:", parsedResponse);
-      return res.status(500).json({ error: "Invalid feedback format from Gemini API" });
+    // Validate feedback structure
+    if (
+      !parsedResponse.score ||
+      !parsedResponse.strengths ||
+      !parsedResponse.areasToImprove ||
+      parsedResponse.avgResponseTime === undefined
+    ) {
+      console.error('Invalid feedback format in parsed response:', parsedResponse);
+      return res.status(500).json({ error: 'Invalid feedback format from Gemini API' });
     }
 
-    res.json(parsedResponse);
+    // Calculate average response time as fallback if Gemini API fails to provide it
+    const responseTimes = conversation
+      .filter((entry) => entry.responseTime !== undefined)
+      .map((entry) => entry.responseTime);
+    const calculatedAvgResponseTime =
+      responseTimes.length > 0 ? (responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length).toFixed(2) : 'N/A';
+
+    res.json({
+      score: parsedResponse.score,
+      strengths: parsedResponse.strengths,
+      areasToImprove: parsedResponse.areasToImprove,
+      avgResponseTime: parsedResponse.avgResponseTime || calculatedAvgResponseTime,
+    });
   } catch (err) {
-    console.error("Error in /evaluate-answers:", err.message);
+    console.error('Error in /evaluate-answers:', err.message);
     res.status(500).json({ error: `Internal Server Error: ${err.message}` });
   }
 });
-
 // Other endpoints (unchanged, assumed working)
 router.post('/login', async (req, res) => {
   const { email, profileUrl, name } = req.body;
